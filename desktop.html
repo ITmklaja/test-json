@@ -216,11 +216,11 @@
     function initialize(data2025) {
       window.champMap = {};
       data2025.championships.forEach(function(ch) {
-         if(ch.status === "1") { champMap[ch.id] = ch; }
+         if(ch.status == 1) { champMap[ch.id] = ch; }
       });
       window.seriesMap = {};
       data2025.series.forEach(function(s) {
-         if(s.status === "1") { seriesMap[s.id] = s; }
+         if(s.status == 1) { seriesMap[s.id] = s; }
       });
       window.champToSeries = {};
       data2025.series_championship.forEach(function(sc) {
@@ -231,7 +231,7 @@
     function initializeData(data2025) {
       processedRounds = [];
       data2025.rounds.forEach(function(r) {
-         if(r.status !== "1") return;
+         if(r.status != 1) return;
          let chId = r.championship_id;
          if(champMap[chId]) {
             r.championship_name = champMap[chId].name;
@@ -259,16 +259,16 @@
          return new Date(a.start_date) - new Date(b.start_date);
       });
       data2025.series.forEach(function(s) {
-         if(s.status === "1") { activeSeries[s.id] = true; }
+         if(s.status == 1) { activeSeries[s.id] = true; }
       });
       data2025.championships.forEach(function(ch) {
-         if(ch.status === "1") { activeChampionships[ch.id] = true; }
+         if(ch.status == 1) { activeChampionships[ch.id] = true; }
       });
       data2025.drivers.forEach(function(d) {
-         if(d.status === "1") { activeDrivers[d.id] = false; }
+         if(d.status == 1) { activeDrivers[d.id] = false; }
       });
       data2025.teams.forEach(function(t) {
-         if(t.status === "1") { activeTeams[t.id] = false; }
+         if(t.status == 1) { activeTeams[t.id] = false; }
       });
       data2025.driver_round.forEach(function(dr) {
          if(!driverRoundsMap[dr.driver_id]) driverRoundsMap[dr.driver_id] = [];
@@ -317,8 +317,8 @@
     }
     
     function initCalendar() {
-      const calendarGrid = document.getElementById("calendarGrid");
-      calendarGrid.innerHTML = "";
+      const calendarGrid = $("#calendarGrid");
+      calendarGrid.empty();
       const weekdaysFull = ['Poniedziałek','Wtorek','Środa','Czwartek','Piątek','Sobota','Niedziela'];
       const monthNamesFull = {1:"Styczeń",2:"Luty",3:"Marzec",4:"Kwiecień",5:"Maj",6:"Czerwiec",7:"Lipiec",8:"Sierpień",9:"Wrzesień",10:"Październik",11:"Listopad",12:"Grudzień"};
       for(let m = 1; m <= 12; m++){
@@ -381,6 +381,14 @@
     function attachMonthListeners() {
       months = $(".month").toArray();
       const totalMonths = months.length;
+      $(".month").on("click", function(){
+         if(!singleMonthActive){
+            singleMonthActive = true;
+            currentMonthIndex = $(".month").index(this);
+            $("body").addClass("single-month-active");
+            showSingleMonth(currentMonthIndex);
+         }
+      });
       $("#btnMonthPrev").on("click", function(){
          if(currentMonthIndex > 0){
             currentMonthIndex--;
@@ -455,14 +463,14 @@
       filtersSeriesDiv.html('<div class="filters-title">Serie / Mistrzostwa</div>');
       let filterSeries = {};
       $.each(window.data2025["series"], function(i, s) {
-         if(s.status === "1") {
+         if(s.status == 1) {
             filterSeries[s.id] = { series: s, championships: [] };
          }
       });
       $.each(window.data2025["championships"], function(i, ch) {
-         if(ch.status === "1") {
+         if(ch.status == 1) {
             $.each(window.data2025["series_championship"], function(j, sc) {
-               if(sc.championship_id === ch.id) {
+               if(sc.championship_id == ch.id) {
                   if(filterSeries[sc.series_id]) {
                      filterSeries[sc.series_id].championships.push(ch);
                   }
@@ -569,6 +577,37 @@
       applyFilters();
     });
     
+    const btnCheckAllDT = $("#btnCheckAllDT");
+    const btnUncheckAllDT = $("#btnUncheckAllDT");
+    btnCheckAllDT.on("click", function(){
+      $('[data-filterscope="driver"], [data-filterscope="team"]').each(function(){
+         if($(this).attr("data-driver-id")){
+            const did = parseInt($(this).attr("data-driver-id"), 10);
+            activeDrivers[did] = true;
+         }
+         if($(this).attr("data-team-id")){
+            const tid = parseInt($(this).attr("data-team-id"), 10);
+            activeTeams[tid] = true;
+         }
+         updateCheckbox($(this).find(".custom-checkbox").first(), true);
+      });
+      applyFilters();
+    });
+    btnUncheckAllDT.on("click", function(){
+      $('[data-filterscope="driver"], [data-filterscope="team"]').each(function(){
+         if($(this).attr("data-driver-id")){
+            const did = parseInt($(this).attr("data-driver-id"), 10);
+            activeDrivers[did] = false;
+         }
+         if($(this).attr("data-team-id")){
+            const tid = parseInt($(this).attr("data-team-id"), 10);
+            activeTeams[tid] = false;
+         }
+         updateCheckbox($(this).find(".custom-checkbox").first(), false);
+      });
+      applyFilters();
+    });
+    
     $("#btnSavePreferences").on("click", function(){
       const prefs = {
          activeSeries: activeSeries,
@@ -618,87 +657,6 @@
     }
     
     $(window).on("resize", adjustWeekHeights);
-    
-    // Nawigacja miesięczna
-    function attachMonthListeners() {
-      months = $(".month").toArray();
-      const totalMonths = months.length;
-      $(".month").on("click", function(){
-         if(!singleMonthActive){
-            singleMonthActive = true;
-            currentMonthIndex = $(".month").index(this);
-            $("body").addClass("single-month-active");
-            showSingleMonth(currentMonthIndex);
-         }
-      });
-      $("#btnMonthPrev").on("click", function(){
-         if(currentMonthIndex > 0){
-            currentMonthIndex--;
-            showSingleMonth(currentMonthIndex);
-         }
-      });
-      $("#btnMonthNext").on("click", function(){
-         if(currentMonthIndex < totalMonths - 1){
-            currentMonthIndex++;
-            showSingleMonth(currentMonthIndex);
-         }
-      });
-      $("#btnMonthBack").on("click", function(){
-         singleMonthActive = false;
-         currentMonthIndex = null;
-         $("body").removeClass("single-month-active");
-         $(".month").css("display", "flex").removeClass("single-month");
-         adjustWeekHeights();
-      });
-    }
-    
-    function showSingleMonth(idx){
-      $(".month").each(function(i, m){
-         if(i === idx){
-            $(m).css("display", "flex").addClass("single-month");
-            $(m).find(".event-bar").each(function(){
-               $(this).text($(this).attr("data-championship-name"));
-            });
-         } else {
-            $(m).css("display", "none").removeClass("single-month");
-         }
-      });
-      adjustWeekHeights();
-    }
-    
-    function adjustWeekHeights(){
-      const grid = $("#calendarGrid");
-      let columns = 3;
-      const w = window.innerWidth;
-      if(singleMonthActive) {
-         columns = 1;
-      } else {
-         if(w <= 1400) columns = 1;
-         else if(w <= 1720) columns = 2;
-         else columns = 3;
-      }
-      const allMonths = grid.find(".month").toArray();
-      const visibleMonths = allMonths.filter(m => $(m).css("display") !== "none");
-      for(let i = 0; i < visibleMonths.length; i += columns) {
-         let rowSlice = visibleMonths.slice(i, i + columns);
-         let dayArrays = rowSlice.map(m => $(m).find(".days .day").toArray());
-         for(let weekIndex = 0; weekIndex < 6; weekIndex++){
-            let groupDays = [];
-            rowSlice.forEach((m, col) => {
-               const offsetStart = weekIndex * 7;
-               let slice = dayArrays[col].slice(offsetStart, offsetStart + 7);
-               groupDays = groupDays.concat(slice);
-            });
-            let maxH = 0;
-            $(groupDays).css("height", "auto");
-            $(groupDays).each(function(){
-               const h = $(this).height();
-               if(h > maxH) maxH = h;
-            });
-            $(groupDays).height(maxH);
-         }
-      }
-    }
   </script>
 </body>
 </html>
