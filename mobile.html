@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kalendarz wyścigowy 2025 - Mobilna wersja</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      font-family: Arial, sans-serif;
+      background: #023E42; color: #fff;
+      overflow-x: hidden;
+    }
+    header {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%;
+      background: #023E42;
+      padding: 10px;
+      box-sizing: border-box;
+      z-index: 1000;
+    }
+    header h1 { margin: 0; font-size: 24px; text-align: center; }
+    #filtersPanel {
+      position: fixed;
+      top: 60px; left: 0;
+      width: 100%;
+      background: #023E42;
+      padding: 10px;
+      box-sizing: border-box;
+      z-index: 1000;
+    }
+    /* Formularz filtrów w układzie 3 kolumn */
+    #filtersPanel form {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    #filtersPanel form label { display: block; font-size: 14px; }
+    #filtersPanel form input { width: 100%; padding: 5px; box-sizing: border-box; }
+    .calendar-container {
+      margin-top: 120px;
+      padding: 10px;
+    }
+    .calendar-grid {
+      display: grid;
+      gap: 15px;
+      grid-template-columns: 1fr;
+    }
+    .month {
+      background-color: #023E42; padding: 10px;
+      display: flex; flex-direction: column;
+      border-radius: 6px; position: relative;
+    }
+    .month-label { text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 8px; }
+    .weekdays { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 4px; }
+    .weekdays div { text-align: center; font-weight: bold; font-size: 10px; color: #eee; }
+    .days { display: grid; grid-template-columns: repeat(7, 1fr); }
+    .day {
+      background: #023E42; position: relative; min-height: 60px;
+      border: 1px solid #fff; overflow: hidden; transition: background 0.3s;
+    }
+    .day:hover { background: #035765; }
+    .day-number {
+      position: absolute; top: 3px; left: 3px; font-size: 10px; font-weight: bold;
+    }
+    .event-bar {
+      width: 100%; font-size: 10px; font-weight: bold; line-height: 12px; border-radius: 3px;
+      margin-bottom: 1px; height: 16px; text-align: center; position: relative;
+      overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: default;
+    }
+    .event-bar:hover::after {
+      content: attr(data-round); position: absolute; bottom: 100%; left: 50%;
+      transform: translate(-50%, -3px); background: #fff; color: #000; font-size: 8px;
+      padding: 1px 3px; border-radius: 3px; pointer-events: none; z-index: 999;
+    }
+    footer {
+      background: #023E42;
+      text-align: center;
+      padding: 10px 10px 40px 10px;
+      color: #fff;
+      margin-top: 20px;
+    }
+    .mobile-popup {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #ff0000;
+      color: #fff;
+      padding: 10px 15px;
+      border-radius: 5px;
+      font-size: 14px;
+      z-index: 1000;
+    }
+    .mobile-popup a { color: #fff; text-decoration: none; font-weight: bold; }
+    ::-webkit-scrollbar { display: none; }
+    body { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+  <!-- Podpięcie jQuery -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Kalendarz wyścigowy 2025</h1>
+  </header>
+  <div id="filtersPanel">
+    <form>
+      <div>
+        <label>Filtr 1</label>
+        <input type="checkbox" checked>
+      </div>
+      <div>
+        <label>Filtr 2</label>
+        <input type="checkbox" checked>
+      </div>
+      <div>
+        <label>Filtr 3</label>
+        <input type="checkbox" checked>
+      </div>
+    </form>
+  </div>
+  <div class="calendar-container" id="calendarContainer">
+    <div class="calendar-grid" id="calendarGrid">
+      <!-- Kalendarz generowany dynamicznie przez JS -->
+    </div>
+  </div>
+  <footer>
+    <p>Made by Maciej Klaja</p>
+    <p>wszystkie prawa zastrzeżone 2025</p>
+    <a href="https://buycoffee.to/maciek-klaja" target="_blank">
+      <img src="https://buycoffee.to/img/share-button-primary.png" style="width: 195px; height: 51px" alt="Postaw mi kawę na buycoffee.to">
+    </a>
+  </footer>
+  <script>
+    $(document).ready(function(){
+      $.getJSON("data2025.json")
+        .done(function(data){
+          window.data2025 = data;
+          initialize(data);
+          initializeData(data);
+          buildEventsByDay();
+          initCalendar();
+        })
+        .fail(function(jqxhr, textStatus, error){
+          console.error("Błąd ładowania JSON: " + textStatus + ", " + error);
+        });
+    });
+    
+    let eventsByDay = {};
+    let processedRounds = [];
+    let activeSeries = {};
+    let activeChampionships = {};
+    let activeDrivers = {};
+    let activeTeams = {};
+    let driverRoundsMap = {};
+    let teamRoundsMap = {};
+    let singleMonthActive = false;
+    let currentMonthIndex = null;
+    let months = [];
+    const seasonStart = "2025-01-01";
+    const seasonEnd = "2025-12-31";
+    const yearStartTs = new Date(seasonStart).getTime();
+    const yearEndTs = new Date(seasonEnd).getTime();
+    
+    function initialize(data2025) {
+      window.champMap = {};
+      data2025.championships.forEach(function(ch) {
+         if(ch.status === "1") { champMap[ch.id] = ch; }
+      });
+      window.seriesMap = {};
+      data2025.series.forEach(function(s) {
+         if(s.status === "1") { seriesMap[s.id] = s; }
+      });
+      window.champToSeries = {};
+      data2025.series_championship.forEach(function(sc) {
+         champToSeries[sc.championship_id] = sc.series_id;
+      });
+    }
+    
+    function initializeData(data2025) {
+      processedRounds = [];
+      data2025.rounds.forEach(function(r) {
+         if(r.status !== "1") return;
+         let chId = r.championship_id;
+         if(champMap[chId]) {
+            r.championship_name = champMap[chId].name;
+            r.championship_shortcut = champMap[chId].shortcut;
+            r.championship_color = champMap[chId].color;
+            r.championship_text_color = champMap[chId].text_color;
+            r.championship_weight = parseInt(champMap[chId].weight);
+         }
+         if(champToSeries[chId] && seriesMap[champToSeries[chId]]) {
+            let sId = champToSeries[chId];
+            r.series_id = sId;
+            r.series_name = seriesMap[sId].name;
+            r.series_color = seriesMap[sId].color;
+            r.series_text_color = seriesMap[sId].text_color;
+            r.series_weight = parseInt(seriesMap[sId].weight);
+         }
+         processedRounds.push(r);
+      });
+      processedRounds.sort(function(a, b) {
+         if(a.start_date === b.start_date) {
+            let weightA = a.series_weight * 100 + a.championship_weight;
+            let weightB = b.series_weight * 100 + b.championship_weight;
+            return weightA - weightB;
+         }
+         return new Date(a.start_date) - new Date(b.start_date);
+      });
+      data2025.series.forEach(function(s) {
+         if(s.status === "1") { activeSeries[s.id] = true; }
+      });
+      data2025.championships.forEach(function(ch) {
+         if(ch.status === "1") { activeChampionships[ch.id] = true; }
+      });
+      data2025.drivers.forEach(function(d) {
+         if(d.status === "1") { activeDrivers[d.id] = false; }
+      });
+      data2025.teams.forEach(function(t) {
+         if(t.status === "1") { activeTeams[t.id] = false; }
+      });
+      data2025.driver_round.forEach(function(dr) {
+         if(!driverRoundsMap[dr.driver_id]) driverRoundsMap[dr.driver_id] = [];
+         driverRoundsMap[dr.driver_id].push(dr.round_id);
+      });
+      data2025.team_round.forEach(function(tr) {
+         if(!teamRoundsMap[tr.team_id]) teamRoundsMap[tr.team_id] = [];
+         teamRoundsMap[tr.team_id].push(tr.round_id);
+      });
+    }
+    
+    function buildEventsByDay() {
+      eventsByDay = {};
+      for(let t = yearStartTs; t <= yearEndTs; t += 86400000) {
+         let d = new Date(t);
+         let dayStr = d.toISOString().split("T")[0];
+         eventsByDay[dayStr] = [];
+      }
+      processedRounds.forEach(function(r) {
+         let startTs = new Date(r.start_date).getTime();
+         let endTs = new Date(r.end_date).getTime();
+         if(startTs < yearStartTs) startTs = yearStartTs;
+         if(endTs > yearEndTs) endTs = yearEndTs;
+         for(let t = startTs; t <= endTs; t += 86400000) {
+            let d = new Date(t);
+            let dayStr = d.toISOString().split("T")[0];
+            eventsByDay[dayStr].push({
+              round_id: r.id,
+              round_name: r.name,
+              series_id: r.series_id,
+              series_name: r.series_name,
+              series_color: r.series_color,
+              series_text_color: r.series_text_color,
+              championship_id: r.championship_id,
+              championship_name: r.championship_name,
+              championship_shortcut: r.championship_shortcut,
+              championship_color: r.championship_color,
+              championship_text_color: r.championship_text_color,
+              order_weight: r.series_weight * 100 + r.championship_weight
+            });
+         }
+      });
+      for(let day in eventsByDay) {
+         eventsByDay[day].sort(function(a, b) { return a.order_weight - b.order_weight; });
+      }
+    }
+    
+    function initCalendar() {
+      const calendarGrid = $("#calendarGrid");
+      calendarGrid.empty();
+      const weekdaysFull = ['Poniedziałek','Wtorek','Środa','Czwartek','Piątek','Sobota','Niedziela'];
+      const monthNamesFull = {1:"Styczeń",2:"Luty",3:"Marzec",4:"Kwiecień",5:"Maj",6:"Czerwiec",7:"Lipiec",8:"Sierpień",9:"Wrzesień",10:"Październik",11:"Listopad",12:"Grudzień"};
+      for(let m = 1; m <= 12; m++){
+         let monthDiv = $("<div>").addClass("month").attr("data-month", m).attr("data-month-full", monthNamesFull[m]);
+         $("<div>").addClass("month-label").text(monthNamesFull[m]).appendTo(monthDiv);
+         let weekdaysDiv = $("<div>").addClass("weekdays");
+         $.each(weekdaysFull, function(i, wd){
+           $("<div>").text(wd).appendTo(weekdaysDiv);
+         });
+         weekdaysDiv.appendTo(monthDiv);
+         let daysDiv = $("<div>").addClass("days");
+         let firstDate = new Date("2025-" + m + "-01");
+         let firstDOW = firstDate.getDay();
+         firstDOW = (firstDOW === 0 ? 7 : firstDOW);
+         let emptyBefore = firstDOW - 1;
+         for(let i = 0; i < emptyBefore; i++){
+           $("<div>").addClass("day").appendTo(daysDiv);
+         }
+         let daysInMonth = new Date(2025, m, 0).getDate();
+         for(let d = 1; d <= daysInMonth; d++){
+           let dateStr = "2025-" + (m < 10 ? "0" + m : m) + "-" + (d < 10 ? "0" + d : d);
+           let dayDiv = $("<div>").addClass("day").attr("data-date", dateStr);
+           $("<div>").addClass("day-number").text(d).appendTo(dayDiv);
+           if(eventsByDay[dateStr] && eventsByDay[dateStr].length > 0) {
+             let eventsContainer = $("<div>").addClass("events-container");
+             $.each(eventsByDay[dateStr], function(i, evt){
+               let evtBar = $("<div>").addClass("event-bar")
+                  .attr("data-round-id", evt.round_id)
+                  .attr("data-series-id", evt.series_id)
+                  .attr("data-championship-id", evt.championship_id)
+                  .attr("data-round", evt.round_name)
+                  .attr("data-championship-name", evt.championship_name)
+                  .css({"background-color": evt.championship_color, "color": evt.championship_text_color})
+                  .text(evt.championship_shortcut);
+               eventsContainer.append(evtBar);
+             });
+             dayDiv.append(eventsContainer);
+           }
+           daysDiv.append(dayDiv);
+         }
+         let usedCells = emptyBefore + daysInMonth;
+         let rest = 42 - usedCells;
+         for(let i = 0; i < rest; i++){
+           $("<div>").addClass("day").appendTo(daysDiv);
+         }
+         monthDiv.append(daysDiv);
+         calendarGrid.append(monthDiv);
+      }
+      months = $(".month").toArray();
+      $(".month").on("click", function() {
+         if(!singleMonthActive) {
+            singleMonthActive = true;
+            currentMonthIndex = $(".month").index(this);
+            $("body").addClass("single-month-active");
+            showSingleMonth(currentMonthIndex);
+         }
+      });
+    }
+    
+    function attachMonthListeners() {
+      months = $(".month").toArray();
+      const totalMonths = months.length;
+      $(".month").on("click", function(){
+         if(!singleMonthActive){
+            singleMonthActive = true;
+            currentMonthIndex = $(".month").index(this);
+            $("body").addClass("single-month-active");
+            showSingleMonth(currentMonthIndex);
+         }
+      });
+      $("#btnMonthPrev").on("click", function(){
+         if(currentMonthIndex > 0){
+            currentMonthIndex--;
+            showSingleMonth(currentMonthIndex);
+         }
+      });
+      $("#btnMonthNext").on("click", function(){
+         if(currentMonthIndex < totalMonths - 1){
+            currentMonthIndex++;
+            showSingleMonth(currentMonthIndex);
+         }
+      });
+      $("#btnMonthBack").on("click", function(){
+         singleMonthActive = false;
+         currentMonthIndex = null;
+         $("body").removeClass("single-month-active");
+         $(".month").css("display", "flex").removeClass("single-month");
+         adjustWeekHeights();
+      });
+    }
+    
+    function showSingleMonth(idx){
+      $(".month").each(function(i, m){
+         if(i === idx){
+            $(m).css("display", "flex").addClass("single-month");
+            $(m).find(".event-bar").each(function(){
+               $(this).text($(this).attr("data-championship-name"));
+            });
+         } else {
+            $(m).css("display", "none").removeClass("single-month");
+         }
+      });
+      adjustWeekHeights();
+    }
+    
+    function adjustWeekHeights(){
+      const grid = $("#calendarGrid");
+      let columns = 3;
+      const w = window.innerWidth;
+      if(singleMonthActive) {
+         columns = 1;
+      } else {
+         if(w <= 1400) columns = 1;
+         else if(w <= 1720) columns = 2;
+         else columns = 3;
+      }
+      const allMonths = grid.find(".month").toArray();
+      const visibleMonths = allMonths.filter(m => $(m).css("display") !== "none");
+      for(let i = 0; i < visibleMonths.length; i += columns) {
+         let rowSlice = visibleMonths.slice(i, i + columns);
+         let dayArrays = rowSlice.map(m => $(m).find(".days .day").toArray());
+         for(let weekIndex = 0; weekIndex < 6; weekIndex++){
+            let groupDays = [];
+            rowSlice.forEach((m, col) => {
+               const offsetStart = weekIndex * 7;
+               let slice = dayArrays[col].slice(offsetStart, offsetStart + 7);
+               groupDays = groupDays.concat(slice);
+            });
+            let maxH = 0;
+            $(groupDays).css("height", "auto");
+            $(groupDays).each(function(){
+               const h = $(this).height();
+               if(h > maxH) maxH = h;
+            });
+            $(groupDays).height(maxH);
+         }
+      }
+    }
+    
+    function initFilters() {
+      const filtersSeriesDiv = $("#filtersSeries");
+      filtersSeriesDiv.html('<div class="filters-title">Serie / Mistrzostwa</div>');
+      let filterSeries = {};
+      $.each(window.data2025["series"], function(i, s) {
+         if(s.status === "1") {
+            filterSeries[s.id] = { series: s, championships: [] };
+         }
+      });
+      $.each(window.data2025["championships"], function(i, ch) {
+         if(ch.status === "1") {
+            $.each(window.data2025["series_championship"], function(j, sc) {
+               if(sc.championship_id === ch.id) {
+                  if(filterSeries[sc.series_id]) {
+                     filterSeries[sc.series_id].championships.push(ch);
+                  }
+               }
+            });
+         }
+      });
+      $.each(filterSeries, function(sid, seriesObj) {
+         let s = seriesObj.series;
+         let championships = seriesObj.championships;
+         let seriesColor = s.color;
+         let seriesText = s.text_color;
+         if(championships.length <= 1) {
+            filtersSeriesDiv.append(
+              `<div class="filter-item" data-filterscope="series" data-series-id="${s.id}" data-series-color="${seriesColor}" data-series-text="${seriesText}">
+                 <div class="custom-checkbox checked" style="background-color: ${seriesColor};"></div>
+                 <div class="filter-name">${s.name}</div>
+               </div>`
+            );
+         } else {
+            filtersSeriesDiv.append(
+              `<div class="filter-item filter-group" data-filterscope="seriesGroup" data-series-id="${s.id}" data-series-color="${seriesColor}" data-series-text="${seriesText}">
+                 <div class="custom-checkbox checked" style="background-color: ${seriesColor};"></div>
+                 <div class="filter-name">${s.name}</div>
+               </div>`
+            );
+            $.each(championships, function(i, ch) {
+              filtersSeriesDiv.append(
+                `<div class="filter-item subcategory" data-filterscope="championship" data-championship-id="${ch.id}" data-series-id="${s.id}" data-champ-color="${ch.color}" data-champ-text="${ch.text_color}">
+                   <div class="custom-checkbox checked" style="background-color: ${ch.color};"></div>
+                   <div class="filter-name">${ch.name}</div>
+                 </div>`
+              );
+            });
+         }
+      });
+    }
+    
+    function updateFilterCheckboxes(){
+      $(".filter-item").each(function(){
+         const scope = $(this).attr("data-filterscope");
+         const checkbox = $(this).find(".custom-checkbox").first();
+         if(scope === "series" || scope === "seriesGroup"){
+            const sid = parseInt($(this).attr("data-series-id"), 10);
+            updateCheckbox(checkbox, activeSeries[sid]);
+         } else if(scope === "championship"){
+            const cid = parseInt($(this).attr("data-championship-id"), 10);
+            updateCheckbox(checkbox, activeChampionships[cid]);
+         } else if(scope === "driver"){
+            const did = parseInt($(this).attr("data-driver-id"), 10);
+            updateCheckbox(checkbox, activeDrivers[did]);
+         } else if(scope === "team"){
+            const tid = parseInt($(this).attr("data-team-id"), 10);
+            updateCheckbox(checkbox, activeTeams[tid]);
+         }
+      });
+    }
+    
+    function updateCheckbox(checkboxEl, isActive){
+      if(isActive){
+         const parentScope = checkboxEl.parent().attr("data-filterscope");
+         if(parentScope === "championship"){
+            const champColor = checkboxEl.parent().attr("data-champ-color");
+            if(champColor){ checkboxEl.css("background-color", champColor); }
+            else { checkboxEl.addClass("checked"); }
+         } else if(parentScope === "series" || parentScope === "seriesGroup"){
+            const seriesColor = checkboxEl.parent().attr("data-series-color");
+            if(seriesColor){ checkboxEl.css("background-color", seriesColor); }
+            else { checkboxEl.addClass("checked"); }
+         } else {
+            checkboxEl.addClass("checked");
+         }
+      } else {
+         checkboxEl.removeClass("checked").css("background-color", "#fff");
+      }
+    }
+    
+    $("#btnCheckAllSeries").on("click", function(){
+      $('[data-filterscope="series"], [data-filterscope="seriesGroup"], [data-filterscope="championship"]').each(function(){
+         if($(this).attr("data-series-id")){
+            const sid = parseInt($(this).attr("data-series-id"), 10);
+            activeSeries[sid] = true;
+         }
+         if($(this).attr("data-championship-id")){
+            const cid = parseInt($(this).attr("data-championship-id"), 10);
+            activeChampionships[cid] = true;
+         }
+         updateCheckbox($(this).find(".custom-checkbox").first(), true);
+      });
+      applyFilters();
+    });
+    $("#btnUncheckAllSeries").on("click", function(){
+      $('[data-filterscope="series"], [data-filterscope="seriesGroup"], [data-filterscope="championship"]').each(function(){
+         if($(this).attr("data-series-id")){
+            const sid = parseInt($(this).attr("data-series-id"), 10);
+            activeSeries[sid] = false;
+         }
+         if($(this).attr("data-championship-id")){
+            const cid = parseInt($(this).attr("data-championship-id"), 10);
+            activeChampionships[cid] = false;
+         }
+         updateCheckbox($(this).find(".custom-checkbox").first(), false);
+      });
+      applyFilters();
+    });
+    
+    const btnCheckAllDT = $("#btnCheckAllDT");
+    const btnUncheckAllDT = $("#btnUncheckAllDT");
+    btnCheckAllDT.on("click", function(){
+      $('[data-filterscope="driver"], [data-filterscope="team"]').each(function(){
+         if($(this).attr("data-driver-id")){
+            const did = parseInt($(this).attr("data-driver-id"), 10);
+            activeDrivers[did] = true;
+         }
+         if($(this).attr("data-team-id")){
+            const tid = parseInt($(this).attr("data-team-id"), 10);
+            activeTeams[tid] = true;
+         }
+         updateCheckbox($(this).find(".custom-checkbox").first(), true);
+      });
+      applyFilters();
+    });
+    btnUncheckAllDT.on("click", function(){
+      $('[data-filterscope="driver"], [data-filterscope="team"]').each(function(){
+         if($(this).attr("data-driver-id")){
+            const did = parseInt($(this).attr("data-driver-id"), 10);
+            activeDrivers[did] = false;
+         }
+         if($(this).attr("data-team-id")){
+            const tid = parseInt($(this).attr("data-team-id"), 10);
+            activeTeams[tid] = false;
+         }
+         updateCheckbox($(this).find(".custom-checkbox").first(), false);
+      });
+      applyFilters();
+    });
+    
+    $("#btnSavePreferences").on("click", function(){
+      const prefs = {
+         activeSeries: activeSeries,
+         activeChampionships: activeChampionships,
+         activeDrivers: activeDrivers,
+         activeTeams: activeTeams
+      };
+      localStorage.setItem("raceCalendarPreferences", JSON.stringify(prefs));
+      showPopAlert();
+    });
+    
+    function showPopAlert(){
+      $("#popAlert").css("opacity", 1);
+      setTimeout(function(){
+         $("#popAlert").css("opacity", 0);
+      }, 2000);
+    }
+    
+    function applyFilters(){
+      $(".event-bar").each(function(){
+         const seriesId = parseInt($(this).attr("data-series-id"), 10);
+         const champId = parseInt($(this).attr("data-championship-id"), 10);
+         const roundId = parseInt($(this).attr("data-round-id"), 10);
+         let show = false;
+         if(activeSeries[seriesId] || activeChampionships[champId]) {
+            show = true;
+         }
+         for(let did in activeDrivers){
+            if(activeDrivers[did]){
+               let rounds = driverRoundsMap[did] || [];
+               if(rounds.indexOf(roundId) !== -1){
+                  show = true;
+               }
+            }
+         }
+         for(let tid in activeTeams){
+            if(activeTeams[tid]){
+               let rounds = teamRoundsMap[tid] || [];
+               if(rounds.indexOf(roundId) !== -1){
+                  show = true;
+               }
+            }
+         }
+         $(this).css("display", show ? "block" : "none");
+      });
+      adjustWeekHeights();
+    }
+    
+    $(window).on("resize", adjustWeekHeights);
+  </script>
+</body>
+</html>
